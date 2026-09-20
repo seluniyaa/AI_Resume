@@ -25,9 +25,8 @@ frontend/build/
 backend/uploads/*
 !backend/uploads/.gitkeep
 backend/scratch/
-backend/credits.json
-credits.json
 *.log
+
 *.sqlite
 *.db
 
