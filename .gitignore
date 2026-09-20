@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python Virtual Environments
+backend/venv/
+venv/
+ENV/
+env/
+.venv/
+
+# Large Model Binaries & Portable Executables
+ollama/
+ollama/*
+*.exe
+
+# Node Dependencies & Build Outputs
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Uploaded Resumes & Local Databases
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/scratch/
+backend/credits.json
+credits.json
+*.log
+*.sqlite
+*.db
+
+# Ignored Thesis & Comparison Documentation
+AI_Resume_Builder_Project_Proposal.md
+AI_Resume_Project_Proposal.md
+Master_Thesis_Documentation.md
+Migration_Guide.md
+PROJECT_COMPARISON.txt
+project_comparison.txt
+
+# IDE & OS System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.gemini/
