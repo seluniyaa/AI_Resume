@@ -1,6 +1,6 @@
 /**
  * ====================================================================================
- *  AI RESUME - GOOGLE SHEETS AUTOMATED OUTREACH MAIL SCRIPT
+ *  AI RESUME - GOOGLE SHEETS AUTOMATED OUTREACH MAIL & DIRECT SYNC SCRIPT
  * ====================================================================================
  * 
  * 📋 GOOGLE SHEETS ROW 1 COLUMN HEADERS (Copy & Paste these exact headers into Row 1):
@@ -22,24 +22,94 @@
  * ⚙️ HOW TO SETUP IN GOOGLE SHEETS:
  * 1. Open your Google Sheet > Click "Extensions" > Click "Apps Script".
  * 2. Delete any default code in Code.gs, and paste this ENTIRE code block below.
- * 3. (Optional) If you want to attach a PDF resume from Google Drive:
- *    - Right-click your resume PDF in Google Drive > Share > Copy link.
- *    - Extract the ID string (between /d/ and /view) and paste into RESUME_FILE_ID below.
- *    - Example: https://drive.google.com/file/d/1ABCXYZ.../view -> "1ABCXYZ..."
- * 4. Click Save (disk icon) and return to your Google Sheet.
- * 5. Refresh your Google Sheet webpage — a new menu "Auto Resume Mailer" will appear at top!
- * 6. Click "Auto Resume Mailer" > "Send Resume Emails to Companies" to dispatch emails.
+ * 3. Click "Deploy" (top right) > "New deployment" > Select type "Web app":
+ *    - Description: AI Resume Auto Sync Webhook
+ *    - Execute as: Me
+ *    - Who has access: Anyone
+ * 4. Click "Deploy", approve permissions, and copy the Web App URL!
+ * 5. Paste the Web App URL into the AI Resume web app for 100% automated 1-click sheet sync!
  * ====================================================================================
  */
 
 // 1. (OPTIONAL) REPLACE THIS WITH YOUR GOOGLE DRIVE RESUME PDF FILE ID
-// Extract the ID from your Google Drive link: https://drive.google.com/file/d/YOUR_FILE_ID/view
-// Leave as "" if sending without PDF attachment.
 const RESUME_FILE_ID = ""; 
 
 /**
- * MAIN FUNCTION: Dispatches resume emails to all rows in the active Google Sheet.
- * Features Gmail Daily Quota Protection & Anti-Spam Revocation Control.
+ * WEB APP AUTOMATED SYNC WEBHOOK (doPost):
+ * Enables 100% automated 1-click direct job posting into Google Sheets.
+ * Bypasses GCP Service Account JWT Signatures & System Clock Skew!
+ */
+function doPost(e) {
+  try {
+    let payload = {};
+    if (e && e.postData && e.postData.contents) {
+      payload = JSON.parse(e.postData.contents);
+    }
+    const jobs = payload.jobs || [];
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getActiveSheet();
+    const data = sheet.getDataRange().getValues();
+
+    const headers = [
+      "DATE ADDED", "COMPANY NAME", "JOB ROLE", "SOURCE PLATFORM", "LOCATION", 
+      "MATCH SCORE (%)", "COMPANY CONTACT EMAIL", "JOB POSTING URL", 
+      "AI EVALUATION & SKILLS", "EMAIL SUBJECT", "EMAIL BODY", "OUTREACH STATUS"
+    ];
+
+    // Detect if headers exist in row 1
+    let hasHeader = false;
+    if (data.length > 0 && data[0][0]) {
+      const firstRowStr = data[0].join(" ").toUpperCase();
+      if (firstRowStr.includes("COMPANY NAME") || firstRowStr.includes("JOB ROLE") || firstRowStr.includes("DATE ADDED")) {
+        hasHeader = true;
+      }
+    }
+
+    if (!hasHeader) {
+      if (data.length > 0) {
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      } else {
+        sheet.appendRow(headers);
+      }
+    }
+
+    let addedCount = 0;
+    const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm");
+    
+    jobs.forEach(function(j) {
+      sheet.appendRow([
+        j.date_added || today,
+        j.company || 'Company',
+        j.title || 'Job Role',
+        j.source_platform || 'Company ATS Portal',
+        j.location || 'Remote',
+        (j.match_score || 80) + '%',
+        j.contact_email || '',
+        j.url || '',
+        j.ai_evaluation || '',
+        j.email_subject || '',
+        j.email_body || '',
+        'Ready for Outreach'
+      ]);
+      addedCount++;
+    });
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      message: "Successfully automated sync of " + addedCount + " job listings!",
+      count: addedCount
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * MAIN OUTREACH FUNCTION: Dispatches resume emails to all rows in the active Google Sheet.
  */
 function sendResumeEmails() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
@@ -50,7 +120,6 @@ function sendResumeEmails() {
     return;
   }
 
-  // Check remaining daily email quota
   const initialQuota = MailApp.getRemainingDailyQuota();
   Logger.log("Remaining Daily Email Quota for your Google Account: " + initialQuota);
 
@@ -63,7 +132,6 @@ function sendResumeEmails() {
     return;
   }
 
-  // Gracefully load Resume File Attachment from Google Drive
   let resumeFile = null;
   if (RESUME_FILE_ID && RESUME_FILE_ID.trim() !== "") {
     try {
@@ -79,101 +147,67 @@ function sendResumeEmails() {
   let skippedMissingCount = 0;
   let quotaStopped = false;
 
-  // Loop through rows (skip header row index 0)
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     
-    const companyName = String(row[1] || "").trim();               // Column B (Company)
-    const jobRole = String(row[2] || "").trim();                   // Column C (Role)
-    const recipientEmail = String(row[6] || "").replace(/["']/g, '').trim(); // Column G (Contact Email)
-    const emailSubject = String(row[9] || "").trim();              // Column J (Email Subject)
-    const emailBody = String(row[10] || "").trim();                // Column K (Email Body)
-    const status = String(row[11] || "").trim();                   // Column L (Status)
+    const companyName = String(row[1] || "").trim();
+    const jobRole = String(row[2] || "").trim();
+    const recipientEmail = String(row[6] || "").replace(/["']/g, '').trim();
+    const emailSubject = String(row[9] || "").trim();
+    const emailBody = String(row[10] || "").trim();
+    const status = String(row[11] || "").trim();
 
-    // Skip if already sent
     if (status && status.toUpperCase().includes("SENT")) {
       skippedSentCount++;
       continue;
     }
 
-    // Check for valid email address
     if (!recipientEmail || !recipientEmail.includes("@")) {
-      Logger.log("Skipping Row " + (i + 1) + ": Missing or invalid email address ('" + recipientEmail + "').");
       skippedMissingCount++;
       continue;
     }
 
-    // Check for email subject and body
     if (!emailSubject || !emailBody) {
-      Logger.log("Skipping Row " + (i + 1) + ": Missing Subject or Body.");
       skippedMissingCount++;
       continue;
     }
 
-    // Check remaining daily email quota before sending
     if (MailApp.getRemainingDailyQuota() <= 0) {
-      Logger.log("Quota limit reached during execution. Halting outreach.");
       sheet.getRange(i + 1, 12).setValue("QUOTA EXHAUSTED (Resume tomorrow)");
       quotaStopped = true;
       break;
     }
 
     try {
-      // Build options object
-      const options = {
-        name: "Job Applicant"
-      };
-
+      const options = { name: "Job Applicant" };
       if (resumeFile) {
         options.attachments = [resumeFile.getAs(MimeType.PDF)];
       }
 
-      // Send email via MailApp (Fallback to GmailApp)
       try {
         MailApp.sendEmail(recipientEmail, emailSubject, emailBody, options);
       } catch (eMailApp) {
         GmailApp.sendEmail(recipientEmail, emailSubject, emailBody, options);
       }
 
-      // Update Column L (Status) to SENT with timestamp
       const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd HH:mm");
       sheet.getRange(i + 1, 12).setValue("SENT (" + timestamp + ")");
       sentCount++;
-
-      Logger.log("✅ Sent email " + sentCount + " to " + recipientEmail);
-
-      // Pause 3.5 seconds between emails to bypass Google anti-abuse triggers
       Utilities.sleep(3500);
     } catch (err) {
-      Logger.log("❌ Failed to send email for Row " + (i + 1) + ": " + err.message);
-      
-      const errLower = err.message.toLowerCase();
-      if (errLower.includes("quota") || errLower.includes("limit") || errLower.includes("revoked") || errLower.includes("too many")) {
-        sheet.getRange(i + 1, 12).setValue("QUOTA EXHAUSTED (Resume tomorrow)");
-        quotaStopped = true;
-        break;
-      } else {
-        sheet.getRange(i + 1, 12).setValue("ERROR: " + err.message);
-      }
+      sheet.getRange(i + 1, 12).setValue("ERROR: " + err.message);
     }
   }
 
   const finalQuota = MailApp.getRemainingDailyQuota();
-
-  // Show detailed summary dialog
   SpreadsheetApp.getUi().alert(
     "Outreach Summary:\n\n" +
-    "✅ Emails Sent in this Run: " + sentCount + "\n" +
+    "✅ Emails Sent: " + sentCount + "\n" +
     "⏭️ Skipped (Already Sent): " + skippedSentCount + "\n" +
-    "⚠️ Skipped (Missing Data): " + skippedMissingCount + "\n" +
-    "📊 Remaining Daily Gmail Quota: " + finalQuota + " emails\n\n" +
-    (quotaStopped ? "⛔ Paused: Daily Gmail limit reached. Remaining rows will resume tomorrow automatically when you re-run." : "✨ Batch completed successfully!")
+    "📊 Remaining Daily Gmail Quota: " + finalQuota + " emails\n"
   );
 }
 
-/**
- * Creates custom menu in Google Sheets header
- */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu("Auto Resume Mailer")

@@ -58,8 +58,8 @@ def generate_consolidated_report_json(
     final_jobs = matched_jobs
 
     personalized_recommendations = [
-        f"Truthfulness Protection: Add only technologies ({', '.join(missing_keywords[:3]) if missing_keywords else 'Docker, Kubernetes'}) you genuinely have experience with.",
-        f"Bullet Quality: Do NOT invent metrics. For bullets lacking numbers, add genuine impact metrics (e.g. latency reduction, throughput, user count) if available.",
+        f"Truthfulness Protection: Add only technologies ({', '.join(missing_keywords[:3]) if missing_keywords else 'Docker, Kubernetes'}) you actually have experience with.",
+        f"Bullet Quality: Do NOT invent metrics. For bullets lacking numbers, add measurable impact metrics (e.g. latency reduction, throughput, user count) if available.",
         f"Target Role Alignment: Optimize resume header and summary specifically for '{target_role}' where your core skills ({', '.join(skills[:3]) if skills else 'Python, React'}) provide strong ATS match.",
         "Maintain single-column formatting without complex graphic tables for optimal scanning by ATS screening software."
     ]

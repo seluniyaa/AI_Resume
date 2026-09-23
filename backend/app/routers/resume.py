@@ -9,7 +9,7 @@ from app.models.models import Resume, User, JobListing
 from app.schemas.schemas import ResumeUpdate
 from app.routers.auth import get_current_user_from_token
 from app.services.ocr_service import extract_text_from_file
-from app.services.ai_service import parse_and_analyze_resume
+from app.services.ai_service import parse_and_analyze_resume, is_valid_resume
 from app.services.job_search_service import search_online_jobs
 from app.services.report_service import generate_consolidated_report_json, generate_consolidated_report_pdf
 
@@ -83,6 +83,18 @@ async def upload_resume(
         shutil.copyfileobj(file.file, buffer)
 
     raw_text, file_type = extract_text_from_file(file_path, file.filename)
+    
+    if not is_valid_resume(raw_text):
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded file does not appear to be a resume. Please upload a resume."
+        )
+
     ai_result = parse_and_analyze_resume(raw_text)
 
     parsed_profile = ai_result.get("parsed_profile", {})

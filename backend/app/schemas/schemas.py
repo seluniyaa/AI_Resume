@@ -38,5 +38,7 @@ class JobAction(BaseModel):
     status: str # saved, removed, applied
 
 class ExportSheetsRequest(BaseModel):
-    job_ids: List[int]
+    job_ids: Optional[List[Any]] = []
+    jobs: Optional[List[Dict[str, Any]]] = []
     spreadsheet_id: Optional[str] = "13YrBaEiTJZ7LP-ROpFfLzhp2MCPQtBBU5w6PgXdJ7rY"
+    webhook_url: Optional[str] = ""

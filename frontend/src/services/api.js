@@ -64,8 +64,7 @@ export const jobsAPI = {
 };
 
 export const actionsAPI = {
-  exportSheets: (jobIds) => api.post('/api/actions/export-sheets', { job_ids: jobIds }),
-  autoApply: (jobIds) => api.post('/api/actions/auto-apply', { job_ids: jobIds }),
+  autoApply: (jobIds, jobs = []) => api.post('/api/actions/auto-apply', { job_ids: jobIds, jobs: jobs }),
 };
 
 export default api;

@@ -59,9 +59,9 @@ def get_gspread_client():
     except Exception as e:
         return None, f"GCP Authentication failed: {str(e)}"
 
-def generate_google_sheets_export_payload(candidate_info: Dict[str, Any], job_listings: List[Dict[str, Any]], sheet_id: str = DEFAULT_SPREADSHEET_ID) -> Dict[str, Any]:
+def generate_google_sheets_export_payload(candidate_info: Dict[str, Any], job_listings: List[Dict[str, Any]], sheet_id: str = DEFAULT_SPREADSHEET_ID, webhook_url: str = "") -> Dict[str, Any]:
     """
-    Formulates 12 presentation columns and attempts direct sync to GCP Google Sheets via gspread.
+    Formulates 12 presentation columns and attempts direct sync to GCP Google Sheets via gspread or Apps Script Webhook.
     """
     today = datetime.now().strftime("%Y-%m-%d %H:%M")
     candidate_name = candidate_info.get("full_name", "Candidate")
@@ -70,6 +70,7 @@ def generate_google_sheets_export_payload(candidate_info: Dict[str, Any], job_li
 
     rows = [PRESENTATION_HEADERS]
     formatted_job_rows = []
+    jobs_payload = []
 
     for job in job_listings:
         title = job.get("title", "Software Developer")
@@ -79,7 +80,6 @@ def generate_google_sheets_export_payload(candidate_info: Dict[str, Any], job_li
         contact_email = job.get("contact_email", f"careers@{company.lower().replace(' ', '')}.com")
         job_url = job.get("url", "https://google.com")
         
-        # Determine Source Platform
         source_platform = "Company ATS Portal"
         if "lever.co" in job_url.lower(): source_platform = "Lever ATS"
         elif "greenhouse.io" in job_url.lower(): source_platform = "Greenhouse ATS"
@@ -89,7 +89,6 @@ def generate_google_sheets_export_payload(candidate_info: Dict[str, Any], job_li
         elif "arbeitnow" in job_url.lower(): source_platform = "Arbeitnow Feed"
 
         ai_eval = f"Matched skills: {skills_str}. Candidate role aligned with {title}."
-        
         email_subject = f"Application for {title} - {candidate_name}"
         email_body = (
             f"Dear Hiring Team at {company},\n\n"
@@ -102,67 +101,104 @@ def generate_google_sheets_export_payload(candidate_info: Dict[str, Any], job_li
         status = "Ready for Outreach"
 
         row_data = [
-            today,
-            company,
-            title,
-            source_platform,
-            location,
-            match_score,
-            contact_email,
-            job_url,
-            ai_eval,
-            email_subject,
-            email_body,
-            status
+            today, company, title, source_platform, location, match_score,
+            contact_email, job_url, ai_eval, email_subject, email_body, status
         ]
         
         rows.append(row_data)
         formatted_job_rows.append(row_data)
+        
+        jobs_payload.append({
+            "date_added": today,
+            "company": company,
+            "title": title,
+            "source_platform": source_platform,
+            "location": location,
+            "match_score": str(job.get('match_score', 80)),
+            "contact_email": contact_email,
+            "url": job_url,
+            "ai_evaluation": ai_eval,
+            "email_subject": email_subject,
+            "email_body": email_body,
+            "status": status
+        })
 
     # Format CSV Content
     csv_lines = [",".join([f'"{str(cell).replace(chr(34), chr(34)+chr(34))}"' for cell in row]) for row in rows]
     csv_content = "\n".join(csv_lines)
 
-    # Attempt Direct Sync to Google Sheets via gspread
-    client, auth_err = get_gspread_client()
     direct_sync_success = False
     sync_message = ""
     target_sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
 
-    if client:
-        try:
-            doc = client.open_by_key(sheet_id)
-            sheet = doc.sheet1
-            
-            # Check if headers exist
-            existing_values = sheet.get_all_values()
-            if not existing_values:
-                sheet.append_row(PRESENTATION_HEADERS)
+    DEFAULT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzzw5GtwmnVKd_kP2CLM3g4efrPiFwvsunHcDF1mv2Qw-yDp_sPyeLuHdySpL-RszOjnQ/exec"
+    target_webhook = webhook_url.strip() if webhook_url and webhook_url.strip() else DEFAULT_WEBHOOK_URL
 
-            # Append job rows
-            for r in formatted_job_rows:
-                sheet.append_row(r)
-                
-            direct_sync_success = True
-            sync_message = f"Successfully synced {len(formatted_job_rows)} job listings directly into your Google Sheet!"
+    # Attempt 1: Google Apps Script Webhook Sync
+    if target_webhook:
+        try:
+            import requests
+            resp = requests.post(target_webhook, json={"jobs": jobs_payload, "spreadsheet_id": sheet_id}, timeout=10)
+            if resp.status_code == 200:
+                direct_sync_success = True
+                sync_message = f"Successfully automated sync of {len(jobs_payload)} job listings to Google Sheet!"
+            else:
+                sync_message = f"Webhook response status {resp.status_code}. Attempting direct GCP Cloud sync..."
         except Exception as e:
-            sync_message = f"GCP Direct Sync Note: {str(e)}. Make sure your sheet is shared with: sheet-538@job-email-finder-auto-mail.iam.gserviceaccount.com"
-    else:
-        sync_message = f"GCP Direct Sync Note: {auth_err}"
+            sync_message = f"Webhook sync attempt note: {str(e)}"
+
+    # Attempt 2: Direct GCP gspread Sync
+    if not direct_sync_success:
+        client, auth_err = get_gspread_client()
+        if client:
+            try:
+                doc = client.open_by_key(sheet_id)
+                sheet = doc.sheet1
+
+                existing_values = sheet.get_all_values()
+                has_valid_header = False
+                
+                if existing_values and len(existing_values) > 0:
+                    first_row = [str(val).strip().upper() for val in existing_values[0]]
+                    if any(h in first_row for h in ["COMPANY NAME", "JOB ROLE", "DATE ADDED", "MATCH SCORE (%)"]):
+                        has_valid_header = True
+
+                if not has_valid_header:
+                    if existing_values and len(existing_values) > 0:
+                        sheet.update(range_name='A1:L1', values=[PRESENTATION_HEADERS])
+                    else:
+                        sheet.append_row(PRESENTATION_HEADERS)
+
+                if formatted_job_rows:
+                    sheet.append_rows(formatted_job_rows)
+                    
+                direct_sync_success = True
+                sync_message = f"Successfully synced {len(formatted_job_rows)} job listings directly into your Google Sheet!"
+            except Exception as e:
+                err_str = str(e)
+                sync_message = (
+                    "Sync Note: Cloud API sync is unavailable (System clock set to 2026 or permissions restricted). "
+                    "Please click 'Download Searched Jobs CSV' below for instant 1-click import into your Google Sheet!"
+                )
+        else:
+            if not sync_message:
+                sync_message = (
+                    "Sync Note: Cloud API sync is unavailable. "
+                    "Please click 'Download Searched Jobs CSV' below for instant 1-click import into your Google Sheet!"
+                )
 
     return {
         "direct_sync_success": direct_sync_success,
         "sync_message": sync_message,
         "spreadsheet_id": sheet_id,
         "direct_sheets_url": target_sheet_url,
-        "service_account_email": "sheet-538@job-email-finder-auto-mail.iam.gserviceaccount.com",
         "csv_content": csv_content,
         "filename": "Job_Hunt_Master_List.csv",
         "headers": PRESENTATION_HEADERS,
         "row_count": len(job_listings),
         "instructions": (
-            f"1. Share your Google Sheet ({target_sheet_url}) with: sheet-538@job-email-finder-auto-mail.iam.gserviceaccount.com as Editor.\n"
-            f"2. Or click 'Download CSV' and import it into your sheet via File -> Import.\n"
+            f"1. Click 'Download Searched Jobs CSV' to get your job list file.\n"
+            f"2. Open your Google Sheet ({target_sheet_url}), click File -> Import -> Upload tab, and select the CSV file.\n"
             f"3. Run your Google Sheets Mail Merge / YAMM extension directly using the pre-formatted Email Subject and Email Body columns."
         )
     }

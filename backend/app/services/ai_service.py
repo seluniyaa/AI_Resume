@@ -106,6 +106,52 @@ def extract_location_from_text(raw_text: str) -> str:
             return loc_match.group(0)
     return ""
 
+def is_valid_resume(raw_text: str) -> bool:
+    """
+    Validates whether the extracted text represents a candidate resume.
+    Rejects non-resumes (e.g. random articles, assignment documents, invoices,
+    code snippets, empty/scanned blank files).
+    """
+    if not raw_text or len(raw_text.strip()) < 80:
+        return False
+
+    text_lower = raw_text.lower()
+
+    # 1. Check for contact information (Email, Phone, LinkedIn)
+    has_email = bool(re.search(r'[\w\.-]+@[\w\.-]+\.\w+', raw_text))
+    has_phone = bool(re.search(r'\(?\+?\d{1,3}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}', raw_text))
+    has_linkedin = "linkedin.com/" in text_lower
+    has_contact_info = has_email or has_phone or has_linkedin
+
+    # 2. Check for resume structural headings and keywords
+    resume_section_keywords = [
+        "experience", "work history", "employment", "professional experience",
+        "education", "academic", "skills", "technical skills", "core competencies",
+        "projects", "summary", "profile", "objective", "curriculum vitae", "resume",
+        "certifications", "qualifications", "achievements", "responsibilities",
+        "bachelor", "master", "diploma", "degree", "university", "college"
+    ]
+    
+    section_matches = sum(1 for kw in resume_section_keywords if kw in text_lower)
+
+    # 3. Check for professional role titles or domain terms
+    role_terms = [
+        "developer", "engineer", "analyst", "manager", "specialist", "officer",
+        "executive", "intern", "associate", "consultant", "administrator",
+        "accountant", "supervisor", "coordinator", "lead", "architect"
+    ]
+    role_matches = sum(1 for term in role_terms if term in text_lower)
+
+    # Valid resume criteria:
+    if has_contact_info and (section_matches >= 1 or role_matches >= 1):
+        return True
+    if section_matches >= 2:
+        return True
+    if role_matches >= 2 and section_matches >= 1:
+        return True
+
+    return False
+
 def parse_and_analyze_resume(raw_text: str, job_description: str = "") -> dict:
     """
     Master ATS Audit Engine featuring:
@@ -256,13 +302,13 @@ Return ONLY a valid JSON object matching this exact schema:
       "section_name": "3. Work Experience & Achievement Quality",
       "status": "Needs Improvement",
       "observation": "Bullets describe key responsibilities.",
-      "recommendation": "Add genuine quantifiable outcomes (accounts handled, recovery rate, latency reduction, users served) if available."
+      "recommendation": "Add quantifiable outcomes (accounts handled, recovery rate, latency reduction, users served) if available."
     }},
     {{
       "section_name": "4. Technical Skills & Keyword Density",
       "status": "Good",
       "observation": "Extracted core skills.",
-      "recommendation": "Review required role keywords and add only skills you genuinely possess."
+      "recommendation": "Review required role keywords and add only skills you actually possess."
     }},
     {{
       "section_name": "5. Education & Chronology Check",
@@ -478,7 +524,7 @@ def execute_master_nlp_engine(raw_text: str, job_description: str = "") -> dict:
             truthfulness_labels.append({
                 "claim": f"{item['keyword']} proficiency",
                 "status": "UNSUPPORTED",
-                "recommendation": f"Add {item['keyword']} to your resume ONLY if you have genuine hands-on experience with it."
+                "recommendation": f"Add {item['keyword']} to your resume ONLY if you have hands-on experience with it."
             })
 
     # 8. Multi-Dimensional Score Calculations
@@ -517,13 +563,13 @@ def execute_master_nlp_engine(raw_text: str, job_description: str = "") -> dict:
             "section_name": "3. Work Experience & Achievement Quality",
             "status": "Needs Improvement" if achievement_quality < 75 else "Good",
             "observation": f"Analyzed {total_bullets} experience bullets ({achievement_count} contain metrics).",
-            "recommendation": "Do NOT invent fake metrics. For bullets lacking numbers, add genuine measurable scale (portfolio size, recovery rate %, volume handled) if available."
+            "recommendation": "Do NOT invent fake metrics. For bullets lacking numbers, add measurable scale (portfolio size, recovery rate %, volume handled) if available."
         },
         {
             "section_name": "4. Technical Skills & Keyword Breakdown",
             "status": "Good" if job_keyword_match >= 75 else "Needs Improvement",
             "observation": f"Matched {len(found_skills)} relevant domain skills. Keyword Match Score: {job_keyword_match}/100.",
-            "recommendation": f"Review missing required keywords ({', '.join([k['keyword'] for k in keyword_breakdown if k['status'] == 'Missing'][:3])}). Add ONLY skills you genuinely possess."
+            "recommendation": f"Review missing required keywords ({', '.join([k['keyword'] for k in keyword_breakdown if k['status'] == 'Missing'][:3])}). Add ONLY skills you actually possess."
         },
         {
             "section_name": "5. Education & Chronology Check",

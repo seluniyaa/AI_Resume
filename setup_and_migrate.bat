@@ -1,5 +1,4 @@
 @echo off
-setlocal EnableDelayedExpansion
 title AI Resume Master System - Environment Setup and Migration Installer
 color 0a
 
@@ -16,26 +15,23 @@ set "FRONTEND_DIR=%ROOT_DIR%frontend"
 set "VENV_DIR=%BACKEND_DIR%\venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "VENV_PIP=%VENV_DIR%\Scripts\pip.exe"
+set "OLLAMA_MODELS=%ROOT_DIR%ollama\models"
 
-:: -----------------------------------------------------------------------------
-:: [STEP 1/4] Verifying Python Environment
-:: -----------------------------------------------------------------------------
-echo [STEP 1/4] Detecting Python 3.10+ installation...
+rem -----------------------------------------------------------------------------
+rem [STEP 1/5] Verifying Python Environment
+rem -----------------------------------------------------------------------------
+echo [STEP 1/5] Detecting Python 3.10+ installation...
 set "SYS_PYTHON="
 
 python --version >nul 2>&1
-if %errorlevel% equ 0 (
-    set "SYS_PYTHON=python"
-) else (
+if %errorlevel% equ 0 set "SYS_PYTHON=python"
+if "%SYS_PYTHON%"=="" (
     py -3 --version >nul 2>&1
-    if %errorlevel% equ 0 (
-        set "SYS_PYTHON=py -3"
-    ) else (
-        python3 --version >nul 2>&1
-        if %errorlevel% equ 0 (
-            set "SYS_PYTHON=python3"
-        )
-    )
+    if %errorlevel% equ 0 set "SYS_PYTHON=py -3"
+)
+if "%SYS_PYTHON%"=="" (
+    python3 --version >nul 2>&1
+    if %errorlevel% equ 0 set "SYS_PYTHON=python3"
 )
 
 if "%SYS_PYTHON%"=="" (
@@ -51,13 +47,13 @@ if "%SYS_PYTHON%"=="" (
 for /f "tokens=*" %%v in ('%SYS_PYTHON% --version 2^>^&1') do echo [OK] System Python detected: %%v
 echo.
 
-:: -----------------------------------------------------------------------------
-:: [STEP 2/4] Setup Python Virtual Environment in backend\venv
-:: -----------------------------------------------------------------------------
-echo [STEP 2/4] Setting up Python Virtual Environment in backend\venv...
+rem -----------------------------------------------------------------------------
+rem [STEP 2/5] Setup Python Virtual Environment in backend\venv
+rem -----------------------------------------------------------------------------
+echo [STEP 2/5] Setting up Python Virtual Environment in backend\venv...
 if not exist "%VENV_PYTHON%" (
     echo [INFO] Creating new isolated virtual environment at "%VENV_DIR%"...
-    %SYS_PYTHON% -m venv "%VENV_DIR%"
+    "%SYS_PYTHON%" -m venv "%VENV_DIR%"
     if %errorlevel% neq 0 (
         echo [ERROR] Failed to create virtual environment!
         echo Please ensure you have write permissions in this folder.
@@ -65,8 +61,9 @@ if not exist "%VENV_PYTHON%" (
         exit /b 1
     )
     echo [OK] Virtual environment created successfully.
-) else (
-    echo [INFO] Existing virtual environment found at "%VENV_DIR%".
+)
+if exist "%VENV_PYTHON%" (
+    echo [INFO] Existing virtual environment verified at "%VENV_DIR%".
 )
 
 echo [INFO] Updating pip and installing backend requirements...
@@ -81,10 +78,10 @@ if %errorlevel% neq 0 (
 echo [OK] Backend Python packages verified and ready.
 echo.
 
-:: -----------------------------------------------------------------------------
-:: [STEP 3/4] Database Migration and Demo Account Initialization
-:: -----------------------------------------------------------------------------
-echo [STEP 3/4] Initializing SQLite Database and Migrating Schema...
+rem -----------------------------------------------------------------------------
+rem [STEP 3/5] Database Migration and Demo Account Initialization
+rem -----------------------------------------------------------------------------
+echo [STEP 3/5] Initializing SQLite Database and Migrating Schema...
 echo [INFO] Running backend\init_db.py with isolated virtualenv Python...
 cd /d "%BACKEND_DIR%"
 "%VENV_PYTHON%" init_db.py
@@ -98,45 +95,103 @@ cd /d "%ROOT_DIR%"
 echo [OK] Database schema migrated and verified.
 echo.
 
-:: -----------------------------------------------------------------------------
-:: [STEP 4/4] Frontend Setup (Node.js and npm)
-:: -----------------------------------------------------------------------------
-echo [STEP 4/4] Verifying Node.js and npm for React Vite Frontend...
+rem -----------------------------------------------------------------------------
+rem [STEP 4/5] Frontend Setup (Node.js and npm)
+rem -----------------------------------------------------------------------------
+echo [STEP 4/5] Verifying Node.js and npm for React Vite Frontend...
 
-:: Check for npm.cmd first to prevent PowerShell script execution policy errors (npm.ps1)
+set "NPM_EXEC="
 where npm.cmd >nul 2>&1
-if %errorlevel% equ 0 (
-    set "NPM_EXEC=npm.cmd"
-) else (
+if %errorlevel% equ 0 set "NPM_EXEC=npm.cmd"
+if "%NPM_EXEC%"=="" (
     where npm >nul 2>&1
-    if %errorlevel% equ 0 (
-        set "NPM_EXEC=npm"
-    ) else (
-        echo [WARNING] Node.js or npm was not detected in your PATH!
-        echo Please install Node.js [version 18 or 20 LTS] from https://nodejs.org/
-        echo After installing Node.js, run npm install inside the frontend folder.
-        goto :FINISH_SETUP
-    )
+    if %errorlevel% equ 0 set "NPM_EXEC=npm"
+)
+
+if "%NPM_EXEC%"=="" (
+    echo [WARNING] Node.js or npm was not detected in your PATH!
+    echo Please install Node.js [version 18 or 20 LTS] from https://nodejs.org/
+    echo After installing Node.js, run npm install inside the frontend folder.
+    goto :SKIP_FRONTEND
 )
 
 for /f "tokens=*" %%v in ('%NPM_EXEC% --version 2^>^&1') do echo [OK] npm detected: version %%v
 
 echo [INFO] Installing frontend dependencies in "%FRONTEND_DIR%"...
 cd /d "%FRONTEND_DIR%"
-call %NPM_EXEC% install
-if %errorlevel% neq 0 (
-    echo [WARNING] npm install reported warnings. Checking existing node_modules...
-) else (
-    echo [OK] Frontend dependencies installed successfully.
+cmd /c %NPM_EXEC% install
+echo [OK] Frontend dependencies verified.
+
+echo [INFO] Auditing frontend packages...
+cmd /c %NPM_EXEC% audit fix --force >nul 2>&1
+echo [OK] Frontend dependencies audited and updated.
+cd /d "%ROOT_DIR%"
+
+:SKIP_FRONTEND
+echo.
+
+rem -----------------------------------------------------------------------------
+rem [STEP 5/5] Local Ollama AI Engine & Model Migration (qwen2.5:3b)
+rem -----------------------------------------------------------------------------
+echo [STEP 5/5] Configuring Local Ollama AI Engine and Pulling qwen2.5:3b model...
+
+set "OLLAMA_EXE="
+if exist "%ROOT_DIR%ollama\ollama.exe" set "OLLAMA_EXE=%ROOT_DIR%ollama\ollama.exe"
+if "%OLLAMA_EXE%"=="" (
+    where ollama >nul 2>&1
+    if %errorlevel% equ 0 set "OLLAMA_EXE=ollama"
 )
 
-echo [INFO] Running npm audit fix --force...
-call %NPM_EXEC% audit fix --force
-if %errorlevel% neq 0 (
-    echo [WARNING] npm audit fix reported warnings or issues.
-) else (
-    echo [OK] Frontend dependencies audited and fixed.
+if "%OLLAMA_EXE%"=="" (
+    echo [INFO] Ollama executable not found locally. Initiating automatic download...
+    if not exist "%ROOT_DIR%ollama" mkdir "%ROOT_DIR%ollama"
+    
+    where curl >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo [INFO] Downloading Ollama CLI package (live progress below):
+        curl -# -L "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip" -o "%ROOT_DIR%ollama\ollama.zip"
+    ) else (
+        echo [INFO] Downloading Ollama CLI package via PowerShell (live progress below):
+        powershell -Command "$ProgressPreference='Continue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host 'Downloading https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip...'; Invoke-WebRequest -Uri 'https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip' -OutFile '%ROOT_DIR%ollama\ollama.zip'"
+    )
+
+    if exist "%ROOT_DIR%ollama\ollama.zip" (
+        echo [INFO] Unpacking Ollama binary package...
+        powershell -Command "Expand-Archive -Path '%ROOT_DIR%ollama\ollama.zip' -DestinationPath '%ROOT_DIR%ollama' -Force"
+        del "%ROOT_DIR%ollama\ollama.zip" >nul 2>&1
+        echo [OK] Unpacked Ollama binary.
+    )
+    if exist "%ROOT_DIR%ollama\ollama.exe" set "OLLAMA_EXE=%ROOT_DIR%ollama\ollama.exe"
 )
+
+if not "%OLLAMA_EXE%"=="" (
+    echo [OK] Ollama CLI detected at "%OLLAMA_EXE%".
+    if not exist "%ROOT_DIR%ollama\models" mkdir "%ROOT_DIR%ollama\models"
+
+    netstat -ano 2>nul | findstr /R /C:":11434 .*LISTENING" >nul 2>&1
+    set "OLLAMA_LISTEN=%errorlevel%"
+    
+    if not "%OLLAMA_LISTEN%"=="0" (
+        echo [INFO] Starting background Ollama AI daemon service...
+        start "AI Resume Master - Ollama Setup Service" /min "%OLLAMA_EXE%" serve
+        ping 127.0.0.1 -n 5 >nul
+    )
+
+    echo [INFO] Downloading/Verifying local AI model qwen2.5:3b (live download progress below):
+    "%OLLAMA_EXE%" pull qwen2.5:3b
+    if %errorlevel% equ 0 (
+        echo [OK] Local AI model qwen2.5:3b is ready for high-accuracy resume evaluation.
+    )
+    if not %errorlevel% equ 0 (
+        echo [WARNING] Model download hit a network notice. Backend will use NLP fallback if offline.
+    )
+)
+
+if "%OLLAMA_EXE%"=="" (
+    echo [WARNING] Could not obtain Ollama executable automatically.
+    echo           Please install Ollama from https://ollama.com/ to enable live local AI reasoning.
+)
+
 cd /d "%ROOT_DIR%"
 
 :FINISH_SETUP

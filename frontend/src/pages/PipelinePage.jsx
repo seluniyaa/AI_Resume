@@ -43,7 +43,7 @@ export default function PipelinePage({ resumeData, onProceedToFinal }) {
       section_name: "3. Work Experience & Achievements",
       status: "Needs Improvement",
       observation: "Bullets describe general duties without metrics.",
-      recommendation: "Do NOT invent fake metrics. For bullets lacking numbers, add genuine impact metrics if available."
+      recommendation: "Do NOT invent fake metrics. For bullets lacking numbers, add measurable impact metrics if available."
     },
     {
       section_name: "4. Technical Skills & Keyword Density",
